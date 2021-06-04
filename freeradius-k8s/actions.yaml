@@ -15,3 +15,15 @@ custom:
             default: ""
     required:
         - customparam
+adduser:
+  description: Adds user
+  params:
+    username:
+      description: username
+      type: string
+    password:
+      description: password
+      type: string
+  required:
+    - username
+    - password

@@ -43,6 +43,7 @@ class FreeradiusK8SCharm(CharmBase):
 
         # Action hooks
         self.framework.observe(self.on.custom_action, self._on_custom_action)
+        self.framework.observe(self.on.adduser_action, self._on_adduser_action)
 
         # Relation hooks
         self.framework.observe(self.on.mysql_relation_changed, self._on_mysql_relation_changed)
@@ -50,17 +51,13 @@ class FreeradiusK8SCharm(CharmBase):
     
     def _on_mysql_relation_changed(self, event):
         # TODO
-        #self.mysql = event.params["host"]
+               
+        self.model.unit.status = MaintenanceStatus(f"Receiving DB IP address")
         self.mysql = event.relation.data[event.unit].get("host")
-        self.model.unit.status = MaintenanceStatus(f"Received DB IP:{self.mysql}")
-        #self.model.unit.status = MaintenanceStatus("Received DB IP")
         
         if(self.mysql != None):
             self._apply_spec()
-        
-        self.model.unit.status = ActiveStatus(f"Received DB IP:{self.mysql}")
-        #self.model.unit.status = ActiveStatus("Received DB IP")
-
+            self.model.unit.status = ActiveStatus(f"Received DB IP:{self.mysql}")
     
     def _apply_spec(self):
         # Only apply the spec if this unit is a leader.
@@ -94,7 +91,6 @@ class FreeradiusK8SCharm(CharmBase):
                 {
                     "name": self.framework.model.app.name,
                     "image": "{}".format(config["image"]),
-                    "imagePullPolicy": "Never",
                     "ports": ports,
                     "envConfig": { # Environment variables that wil be passed to the container
                         "RADIUS_DB_HOST": self.mysql,
@@ -141,6 +137,18 @@ class FreeradiusK8SCharm(CharmBase):
             event.set_results({
                     "output": f"File {filename} created successfully"
                     })
+        except Exception as e:
+            event.fail(f"Touch action failed with the following exception: {e}")
+
+    def _on_adduser_action(self, event):
+        username = event.params["username"]
+        password = event.params["password"]
+        cmd1 = f"echo '{username} Cleartext-Password := \"{password}\"' >> /etc/freeradius/users"
+        try:
+            subprocess.run(cmd1, shell=True)
+            event.set_results({
+            "output": f"User {username} created successfully"
+            })
         except Exception as e:
             event.fail(f"Touch action failed with the following exception: {e}")
 

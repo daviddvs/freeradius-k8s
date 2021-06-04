@@ -13,6 +13,7 @@ develop a new k8s charm using the Operator Framework:
 """
 
 import logging
+import subprocess
 
 from ops.charm import CharmBase
 from ops.framework import StoredState
@@ -29,6 +30,7 @@ class FreeradiusK8SCharm(CharmBase):
     """Charm the service."""
 
     state = StoredState()
+    mysql = "localhost"
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -41,14 +43,22 @@ class FreeradiusK8SCharm(CharmBase):
 
         # Action hooks
         self.framework.observe(self.on.custom_action, self._on_custom_action)
+        self.framework.observe(self.on.adduser_action, self._on_adduser_action)
 
         # Relation hooks
         self.framework.observe(self.on.mysql_relation_changed, self._on_mysql_relation_changed)
 
+    
     def _on_mysql_relation_changed(self, event):
         # TODO
-        return
-
+               
+        self.model.unit.status = MaintenanceStatus(f"Receiving DB IP address")
+        self.mysql = event.relation.data[event.unit].get("host")
+        
+        if(self.mysql != None):
+            self._apply_spec()
+            self.model.unit.status = ActiveStatus(f"Received DB IP:{self.mysql}")
+    
     def _apply_spec(self):
         # Only apply the spec if this unit is a leader.
         if not self.framework.model.unit.is_leader():
@@ -76,12 +86,20 @@ class FreeradiusK8SCharm(CharmBase):
         ]
 
         spec = {
-            "version": 2,
+            "version": 3,
             "containers": [
                 {
                     "name": self.framework.model.app.name,
                     "image": "{}".format(config["image"]),
                     "ports": ports,
+                    "envConfig": { # Environment variables that wil be passed to the container
+                        "RADIUS_DB_HOST": self.mysql,
+                        "RADIUS_DB_PORT": "3306",
+                        "RADIUS_DB_USERNAME": "root",
+                        "RADIUS_DB_PASSWORD": "root",
+                        "RADIUS_SQL": "true",
+                        "RADIUS_DB_NAME": "database",
+                    }
                 }
             ],
         }
@@ -111,7 +129,28 @@ class FreeradiusK8SCharm(CharmBase):
     def _on_custom_action(self, event):
         """Define an action"""
         # TODO
-        return
+        filename = event.params["customparam"]
+        cmd = 'touch '+str(filename)
+        try:
+            #subprocess.run(cmd, shell=True)
+            subprocess.run(["touch", filename], cwd="/root")
+            event.set_results({
+                    "output": f"File {filename} created successfully"
+                    })
+        except Exception as e:
+            event.fail(f"Touch action failed with the following exception: {e}")
+
+    def _on_adduser_action(self, event):
+        username = event.params["username"]
+        password = event.params["password"]
+        cmd1 = f"echo '{username} Cleartext-Password := \"{password}\"' >> /etc/freeradius/users"
+        try:
+            subprocess.run(cmd1, shell=True)
+            event.set_results({
+            "output": f"User {username} created successfully"
+            })
+        except Exception as e:
+            event.fail(f"Touch action failed with the following exception: {e}")
 
 
 if __name__ == "__main__":
